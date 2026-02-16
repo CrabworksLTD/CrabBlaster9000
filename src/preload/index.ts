@@ -12,7 +12,9 @@ const ALLOWED_INVOKE_CHANNELS: string[] = [
   'bot:start', 'bot:stop', 'bot:status', 'bot:detected-trades',
   'tx:list', 'tx:clear', 'tx:export',
   'settings:get-rpc', 'settings:set-rpc', 'settings:test-rpc',
-  'settings:get', 'settings:set'
+  'settings:get', 'settings:set',
+  'settings:save-telegram-keys', 'settings:get-telegram-configured',
+  'settings:test-telegram', 'settings:clear-telegram-keys'
 ]
 
 const ALLOWED_EVENT_CHANNELS: string[] = [

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { startBundleBot, stopBot, getBotState } from '../services/bundle-bot'
 import { startVolumeBot, stopVolumeBot, getVolumeBotState } from '../services/volume-bot'
 import { startCopyTradeBot, stopCopyTradeBot, getCopyTradeBotState, getDetectedTrades } from '../services/copy-trade-bot'
+import { getTelegramNotifier } from '../services/telegram-notifier'
 import type { BotConfig } from '@shared/types'
 
 const bundleConfigSchema = z.object({
@@ -55,13 +56,16 @@ export function registerBotIpc(): void {
 
     if (config.mode === 'bundle') {
       const validated = bundleConfigSchema.parse(config)
+      getTelegramNotifier().notifyBotStarted('bundle').catch(() => {})
       // Start in background (don't await)
       startBundleBot(validated).catch(console.error)
     } else if (config.mode === 'volume') {
       const validated = volumeConfigSchema.parse(config)
+      getTelegramNotifier().notifyBotStarted('volume').catch(() => {})
       startVolumeBot(validated).catch(console.error)
     } else if (config.mode === 'copytrade') {
       const validated = copyTradeConfigSchema.parse(config)
+      getTelegramNotifier().notifyBotStarted('copytrade').catch(() => {})
       startCopyTradeBot(validated).catch(console.error)
     } else {
       throw new Error('Invalid bot mode')
@@ -69,9 +73,25 @@ export function registerBotIpc(): void {
   })
 
   ipcMain.handle('bot:stop', async () => {
+    // Determine which mode was running for the notification
+    const bundleState = getBotState()
+    const volumeState = getVolumeBotState()
+    const copyTradeState = getCopyTradeBotState()
+    const runningMode = copyTradeState.status === 'running'
+      ? 'copytrade'
+      : volumeState.status === 'running'
+        ? 'volume'
+        : bundleState.status === 'running'
+          ? 'bundle'
+          : null
+
     stopBot()
     stopVolumeBot()
     stopCopyTradeBot()
+
+    if (runningMode) {
+      getTelegramNotifier().notifyBotStopped(runningMode).catch(() => {})
+    }
   })
 
   ipcMain.handle('bot:status', async () => {

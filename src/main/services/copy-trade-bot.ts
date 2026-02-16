@@ -10,6 +10,7 @@ import {
 import { executeParallelSwaps, type SwapTask } from './transaction-engine'
 import { listWallets } from './wallet-manager'
 import { getConnection } from './rpc-manager'
+import { getTelegramNotifier } from './telegram-notifier'
 import { getDb } from '../storage/database'
 import { getMainWindow } from '../index'
 import { JupiterAdapter } from '../dex/jupiter-adapter'
@@ -324,6 +325,15 @@ export async function startCopyTradeBot(config: CopyTradeBotConfig): Promise<voi
 
           recordDetectedTrade(detectedTrade)
           updateInternal({ detected: tradesDetected + 1 })
+
+          // Telegram notification — non-blocking
+          getTelegramNotifier().notifyTradeDetected({
+            tokenMint: swap.tokenMint,
+            direction: swap.direction,
+            amountSol: swap.amountSol,
+            dex: swap.dex,
+            targetWallet: config.targetWallet
+          }).catch(() => {})
 
           if (config.copyDelayMs > 0) {
             await sleep(config.copyDelayMs)

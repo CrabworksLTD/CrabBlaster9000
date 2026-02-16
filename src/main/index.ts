@@ -7,6 +7,7 @@ import { registerWalletIpc } from './ipc/wallet.ipc'
 import { registerBotIpc } from './ipc/bot.ipc'
 import { registerTransactionIpc } from './ipc/transaction.ipc'
 import { registerSettingsIpc } from './ipc/settings.ipc'
+import { getTelegramNotifier } from './services/telegram-notifier'
 import { autoUpdater } from 'electron-updater'
 
 let mainWindow: BrowserWindow | null = null
@@ -84,6 +85,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 
   initDatabase()
+  getTelegramNotifier().init()
 
   registerWalletIpc()
   registerBotIpc()

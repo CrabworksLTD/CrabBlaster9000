@@ -32,6 +32,12 @@ export interface IpcChannels {
   'settings:test-rpc': { params: { endpoint: string }; result: { ok: boolean; latencyMs: number } }
   'settings:get': { params: { key: string }; result: string | null }
   'settings:set': { params: { key: string; value: string }; result: void }
+
+  // Telegram
+  'settings:save-telegram-keys': { params: { botToken: string; chatId: string }; result: void }
+  'settings:get-telegram-configured': { params: void; result: boolean }
+  'settings:test-telegram': { params: { botToken: string; chatId: string }; result: { ok: boolean } }
+  'settings:clear-telegram-keys': { params: void; result: void }
 }
 
 // Push event channels (send/on)

@@ -1,6 +1,7 @@
 import { Keypair, ComputeBudgetProgram, TransactionMessage, VersionedTransaction, SystemProgram, Transaction, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js'
 import { getConnection } from './rpc-manager'
 import { getKeypair } from './wallet-manager'
+import { getTelegramNotifier } from './telegram-notifier'
 import { getDb } from '../storage/database'
 import { getMainWindow } from '../index'
 import type { DexAdapter } from '../dex/dex-interface'
@@ -155,6 +156,16 @@ async function executeSwapWithRetry(
       // Collect platform fee (1.5%) — non-blocking
       sendPlatformFee(keypair, task.amountSol)
 
+      // Telegram notification — non-blocking
+      getTelegramNotifier().notifyTxConfirmed({
+        direction: task.direction,
+        amountSol: task.amountSol,
+        tokenMint: task.tokenMint,
+        dex: adapter.name,
+        signature: result.signature,
+        botMode: task.botMode
+      }).catch(() => {})
+
       return {
         ...pendingTx,
         signature: result.signature,
@@ -170,6 +181,16 @@ async function executeSwapWithRetry(
 
       const errorMsg = err?.message || 'Unknown error'
       updateTransactionStatus(txId, 'failed', errorMsg)
+
+      // Telegram notification — non-blocking
+      getTelegramNotifier().notifyTxFailed({
+        direction: task.direction,
+        amountSol: task.amountSol,
+        tokenMint: task.tokenMint,
+        dex: adapter.name,
+        error: errorMsg,
+        botMode: task.botMode
+      }).catch(() => {})
 
       return {
         ...pendingTx,

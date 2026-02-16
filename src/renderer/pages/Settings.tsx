@@ -16,10 +16,24 @@ export function SettingsPage() {
   const [slippage, setSlippage] = useState(defaultSlippageBps)
   const [priority, setPriority] = useState(defaultPriorityFee)
 
+  // Telegram state
+  const [tgBotToken, setTgBotToken] = useState('')
+  const [tgChatId, setTgChatId] = useState('')
+  const [tgConfigured, setTgConfigured] = useState(false)
+  const [tgTesting, setTgTesting] = useState(false)
+  const [tgSaving, setTgSaving] = useState(false)
+
   useEffect(() => { fetchSettings() }, [fetchSettings])
   useEffect(() => {
     setRpcInput(rpcEndpoint); setSlippage(defaultSlippageBps); setPriority(defaultPriorityFee)
   }, [rpcEndpoint, defaultSlippageBps, defaultPriorityFee])
+
+  // Fetch Telegram configured status on mount
+  useEffect(() => {
+    window.electronAPI.invoke('settings:get-telegram-configured')
+      .then(setTgConfigured)
+      .catch(() => {})
+  }, [])
 
   const handleTestRpc = async () => {
     setTesting(true); setTestResult(null)
@@ -45,6 +59,37 @@ export function SettingsPage() {
       toast.success('Defaults saved')
     } catch (err: any) { toast.error(err?.message || 'Failed') }
     setSaving(false)
+  }
+
+  const handleTestTelegram = async () => {
+    if (!tgBotToken || !tgChatId) return
+    setTgTesting(true)
+    try {
+      const result = await window.electronAPI.invoke('settings:test-telegram', { botToken: tgBotToken, chatId: tgChatId })
+      toast[result.ok ? 'success' : 'error'](result.ok ? 'Test message sent!' : 'Failed — check token and chat ID')
+    } catch { toast.error('Test failed') }
+    setTgTesting(false)
+  }
+
+  const handleSaveTelegram = async () => {
+    if (!tgBotToken || !tgChatId) return
+    setTgSaving(true)
+    try {
+      await window.electronAPI.invoke('settings:save-telegram-keys', { botToken: tgBotToken, chatId: tgChatId })
+      setTgConfigured(true)
+      setTgBotToken('')
+      setTgChatId('')
+      toast.success('Telegram keys saved')
+    } catch (err: any) { toast.error(err?.message || 'Failed') }
+    setTgSaving(false)
+  }
+
+  const handleClearTelegram = async () => {
+    try {
+      await window.electronAPI.invoke('settings:clear-telegram-keys')
+      setTgConfigured(false)
+      toast.success('Telegram disconnected')
+    } catch (err: any) { toast.error(err?.message || 'Failed') }
   }
 
   return (
@@ -88,6 +133,44 @@ export function SettingsPage() {
           <button onClick={handleSaveDefaults} disabled={saving} className="btn-primary">
             {saving ? <Spinner /> : 'Save Defaults'}
           </button>
+        </div>
+      </div>
+
+      {/* Telegram */}
+      <div className="win-groupbox">
+        <span className="win-groupbox-label">Telegram Notifications</span>
+        <div className="mt-2 space-y-2">
+          {tgConfigured ? (
+            <>
+              <p className="text-[11px] text-success">Connected — notifications will be sent to your Telegram chat.</p>
+              <button onClick={handleClearTelegram} className="btn-secondary">Disconnect</button>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="label">Bot Token:</label>
+                <input className="input w-full" type="password" value={tgBotToken} onChange={(e) => setTgBotToken(e.target.value)} placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" />
+              </div>
+              <div>
+                <label className="label">Chat ID:</label>
+                <input className="input w-full" value={tgChatId} onChange={(e) => setTgChatId(e.target.value)} placeholder="-1001234567890" />
+              </div>
+              <div className="flex gap-1">
+                <button onClick={handleSaveTelegram} disabled={tgSaving || !tgBotToken || !tgChatId} className="btn-primary">
+                  {tgSaving ? <Spinner /> : 'Save'}
+                </button>
+                <button onClick={handleTestTelegram} disabled={tgTesting || !tgBotToken || !tgChatId} className="btn-secondary">
+                  {tgTesting ? <Spinner /> : 'Test'}
+                </button>
+              </div>
+              <div className="shadow-win-field bg-white p-2 text-[11px] space-y-1">
+                <p><b>Setup:</b></p>
+                <p>1. Message <b>@BotFather</b> on Telegram to create a bot.</p>
+                <p>2. Copy the bot token.</p>
+                <p>3. Start a chat with your bot, then get your chat ID from <b>@userinfobot</b>.</p>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
