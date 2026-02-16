@@ -1,23 +1,18 @@
 import { PublicKey, SystemProgram, VersionedTransaction, TransactionMessage } from '@solana/web3.js'
 import { getConnection } from '../services/rpc-manager'
 
-// Known safe program IDs for swap transactions
-const ALLOWED_PROGRAM_IDS = new Set([
-  'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',  // Jupiter v6
-  'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB',  // Jupiter v4
-  'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc',  // Orca Whirlpools
-  'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK', // Raydium CLMM
-  '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8', // Raydium AMM v4
-  'routeUGWgWzqBWFcrCfv8tritsqukccJPu3q5GPP3xS',  // Raydium route
-  '5quBtoiQqxF9Jv6KYKctB59NT3gtJD2Y65kdnB1Uev3h', // Raydium AMM stable
-  'srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX',  // Serum/OpenBook
-  'opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EQMQa8',  // OpenBook v2
-  'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',   // SPL Token
-  'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',  // Associated Token
-  'ComputeBudget111111111111111111111111111111',     // Compute Budget
-  '11111111111111111111111111111111',                 // System Program
-])
-
+/**
+ * Validates a swap transaction before signing.
+ *
+ * We intentionally do NOT whitelist program IDs because Jupiter (and other
+ * aggregators) route through dozens of on-chain programs (Meteora, Lifinity,
+ * Phoenix, Raydium CPMM, Pump.fun, etc.) and the set changes per route.
+ * A static allowlist silently rejects valid swaps.
+ *
+ * Instead we check the properties that actually matter for safety:
+ *   1. Fee payer is our wallet (not someone else's).
+ *   2. No large SOL drains to unknown addresses.
+ */
 export function validateSwapTransaction(
   tx: VersionedTransaction,
   expectedWallet: string,
@@ -34,24 +29,8 @@ export function validateSwapTransaction(
     )
   }
 
-  // 2. Check all program IDs in the transaction are known/allowed
+  // 2. Check for suspicious direct SOL transfers to unknown addresses
   const compiledInstructions = message.compiledInstructions
-  for (const ix of compiledInstructions) {
-    const programId = accountKeys.get(ix.programIdIndex)
-    if (!programId) {
-      throw new Error(`${dexName} transaction has instruction with missing program ID`)
-    }
-    const programIdStr = programId.toBase58()
-
-    if (!ALLOWED_PROGRAM_IDS.has(programIdStr)) {
-      throw new Error(
-        `${dexName} transaction contains unknown program: ${programIdStr}. ` +
-        `This could indicate a compromised API response. Transaction rejected for safety.`
-      )
-    }
-  }
-
-  // 3. Check for suspicious direct SOL transfers to unknown addresses
   for (const ix of compiledInstructions) {
     const programId = accountKeys.get(ix.programIdIndex)
     if (!programId) continue
@@ -65,19 +44,16 @@ export function validateSwapTransaction(
         const to = accountKeys.get(ix.accountKeyIndexes[1])
 
         if (from && from.toBase58() === expectedWallet && to) {
-          const toStr = to.toBase58()
-          // Allow transfers to known programs/ATAs, flag transfers to unknown wallets
-          if (!ALLOWED_PROGRAM_IDS.has(toStr)) {
-            const amount = ix.data.readBigUInt64LE(4)
-            const solAmount = Number(amount) / 1e9
-            // Warn if transferring more than 1 SOL to an unknown address
-            // (small amounts may be rent, ATA creation, etc.)
-            if (solAmount > 1) {
-              throw new Error(
-                `${dexName} transaction contains suspicious SOL transfer of ${solAmount.toFixed(4)} SOL ` +
-                `to unknown address ${toStr}. Transaction rejected for safety.`
-              )
-            }
+          const amount = ix.data.readBigUInt64LE(4)
+          const solAmount = Number(amount) / 1e9
+          // Flag transfers larger than 10 SOL to a non-program address.
+          // Swap routes legitimately transfer SOL (wrapping, fees, etc.)
+          // but >10 SOL direct sends are suspicious.
+          if (solAmount > 10) {
+            throw new Error(
+              `${dexName} transaction contains suspicious SOL transfer of ${solAmount.toFixed(4)} SOL ` +
+              `to address ${to.toBase58()}. Transaction rejected for safety.`
+            )
           }
         }
       }
