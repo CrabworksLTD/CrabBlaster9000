@@ -131,6 +131,27 @@ class TelegramNotifier {
       `⚠️ <b>BOT ERROR</b>\nMode: ${mode}\nError: ${error}`
     )
   }
+
+  async notifyPmCopyTrade(position: any, trade: any): Promise<void> {
+    await this.send(
+      `📋 <b>PM COPY TRADE</b>\n` +
+        `${position.side} ${position.outcome}\n` +
+        `Market: ${(position.marketTitle || '').slice(0, 60)}\n` +
+        `Price: $${position.entryPrice.toFixed(3)} | Size: $${position.costBasis.toFixed(2)}\n` +
+        `Source: wallet #${trade.walletId} (${trade.size.toFixed(1)} @ $${trade.price.toFixed(3)})`
+    )
+  }
+
+  async notifyPmPositionClosed(position: any, pnl: number, pnlPct: number): Promise<void> {
+    const emoji = pnl >= 0 ? '🟢' : '🔴'
+    const sign = pnl >= 0 ? '+' : ''
+    await this.send(
+      `${emoji} <b>PM POSITION CLOSED</b>\n` +
+        `${position.outcome} — ${(position.marketTitle || '').slice(0, 60)}\n` +
+        `PnL: ${sign}$${pnl.toFixed(2)} (${sign}${pnlPct.toFixed(1)}%)\n` +
+        `Reason: ${position.closeReason || 'unknown'}`
+    )
+  }
 }
 
 let instance: TelegramNotifier | null = null
