@@ -1,10 +1,13 @@
 import { getDb } from '../storage/database'
 import { encryptKey, decryptKey } from '../storage/secure-storage'
+import { getPipelineStats } from './pipeline-stats'
 
 class TelegramNotifier {
   private botToken: string | null = null
   private chatId: string | null = null
   private enabled = false
+  private updateOffset = 0
+  private pollTimer: ReturnType<typeof setInterval> | null = null
 
   init(): void {
     try {
@@ -20,6 +23,7 @@ class TelegramNotifier {
         this.botToken = decryptKey(tokenRow.value)
         this.chatId = decryptKey(chatRow.value)
         this.enabled = true
+        this.startCommandPolling()
       }
     } catch (err) {
       console.error('TelegramNotifier init failed:', err)
@@ -28,10 +32,80 @@ class TelegramNotifier {
   }
 
   reload(): void {
+    this.stopCommandPolling()
     this.botToken = null
     this.chatId = null
     this.enabled = false
     this.init()
+  }
+
+  startCommandPolling(): void {
+    if (this.pollTimer) return
+    this.pollTimer = setInterval(() => this.pollCommands(), 3000)
+  }
+
+  stopCommandPolling(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer)
+      this.pollTimer = null
+    }
+  }
+
+  private async pollCommands(): Promise<void> {
+    if (!this.enabled || !this.botToken) return
+
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${this.botToken}/getUpdates?offset=${this.updateOffset}&timeout=0`
+      )
+      if (!res.ok) return
+
+      const data = (await res.json()) as {
+        ok: boolean
+        result: Array<{
+          update_id: number
+          message?: { chat: { id: number }; text?: string }
+        }>
+      }
+
+      if (!data.ok || !data.result.length) return
+
+      for (const update of data.result) {
+        this.updateOffset = update.update_id + 1
+
+        const text = update.message?.text?.trim()
+        if (!text) continue
+
+        if (text === '/pipeline') {
+          const chatId = update.message!.chat.id.toString()
+          await this.sendToChat(chatId, getPipelineStats().format())
+        }
+      }
+    } catch (err) {
+      console.error('Telegram command poll error:', err)
+    }
+  }
+
+  private async sendToChat(chatId: string, text: string): Promise<boolean> {
+    if (!this.botToken) return false
+
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${this.botToken}/sendMessage`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text,
+            parse_mode: 'HTML'
+          })
+        }
+      )
+      return res.ok
+    } catch {
+      return false
+    }
   }
 
   isConfigured(): boolean {

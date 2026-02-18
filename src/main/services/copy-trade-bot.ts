@@ -19,6 +19,7 @@ import { PumpFunAdapter } from '../dex/pumpfun-adapter'
 import { BonkAdapter } from '../dex/bonk-adapter'
 import { BagsAdapter } from '../dex/bags-adapter'
 import type { DexAdapter } from '../dex/dex-interface'
+import { getPipelineStats } from './pipeline-stats'
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -154,17 +155,21 @@ interface ParsedSwap {
   dex: string
 }
 
+type ParseSwapResult =
+  | { swap: ParsedSwap }
+  | { reason: 'meta_error' | 'unknown_dex' | 'no_swap' }
+
 function parseSwapFromTransaction(
   tx: ParsedTransactionWithMeta,
   targetWallet: string
-): ParsedSwap | null {
-  if (!tx.meta || tx.meta.err) return null
+): ParseSwapResult {
+  if (!tx.meta || tx.meta.err) return { reason: 'meta_error' }
 
   const programIds = (tx.transaction.message.accountKeys || []).map((k) =>
     typeof k === 'string' ? k : k.pubkey.toBase58()
   )
   const dex = identifyDex(programIds)
-  if (dex === 'unknown') return null
+  if (dex === 'unknown') return { reason: 'unknown_dex' }
 
   const preBalances = tx.meta.preTokenBalances || []
   const postBalances = tx.meta.postTokenBalances || []
@@ -213,7 +218,7 @@ function parseSwapFromTransaction(
     break
   }
 
-  if (!tokenMint || !direction) return null
+  if (!tokenMint || !direction) return { reason: 'no_swap' }
 
   const targetAccountIndex = tx.transaction.message.accountKeys.findIndex((k) => {
     const key = typeof k === 'string' ? k : k.pubkey.toBase58()
@@ -229,7 +234,7 @@ function parseSwapFromTransaction(
 
   if (amountSol < 0.001) amountSol = 0.001
 
-  return { tokenMint, direction, amountSol, dex }
+  return { swap: { tokenMint, direction, amountSol, dex } }
 }
 
 export async function startCopyTradeBot(config: CopyTradeBotConfig): Promise<void> {
@@ -239,6 +244,7 @@ export async function startCopyTradeBot(config: CopyTradeBotConfig): Promise<voi
 
   abortController = new AbortController()
   lastSignature = null
+  getPipelineStats().reset()
 
   const connection = getConnection()
   const targetPubkey = new PublicKey(config.targetWallet)
@@ -284,15 +290,23 @@ export async function startCopyTradeBot(config: CopyTradeBotConfig): Promise<voi
           sigOptions
         )
 
+        const ps = getPipelineStats()
+        ps.incr('totalPolls')
+        ps.setLastCycleAt(new Date().toISOString())
+
         if (signatures.length === 0) continue
 
+        ps.incrBy('signaturesFetched', signatures.length)
         lastSignature = signatures[0].signature
 
         const reversedSigs = [...signatures].reverse()
 
         for (const sigInfo of reversedSigs) {
           if (abortController.signal.aborted) break
-          if (sigInfo.err) continue
+          if (sigInfo.err) {
+            ps.incr('failedTx')
+            continue
+          }
 
           let parsedTx: ParsedTransactionWithMeta | null = null
           try {
@@ -300,16 +314,31 @@ export async function startCopyTradeBot(config: CopyTradeBotConfig): Promise<voi
               maxSupportedTransactionVersion: 0
             })
           } catch {
+            ps.incr('parseError')
             continue
           }
 
-          if (!parsedTx) continue
+          if (!parsedTx) {
+            ps.incr('parseError')
+            continue
+          }
 
-          const swap = parseSwapFromTransaction(parsedTx, config.targetWallet)
-          if (!swap) continue
+          const parseResult = parseSwapFromTransaction(parsedTx, config.targetWallet)
+          if ('reason' in parseResult) {
+            if (parseResult.reason === 'meta_error') ps.incr('failedTx')
+            else if (parseResult.reason === 'unknown_dex') ps.incr('unknownDex')
+            else if (parseResult.reason === 'no_swap') ps.incr('noSwapDetected')
+            continue
+          }
+          const swap = parseResult.swap
 
-          if (swap.direction === 'buy' && !config.copyBuys) continue
-          if (swap.direction === 'sell' && !config.copySells) continue
+          if (
+            (swap.direction === 'buy' && !config.copyBuys) ||
+            (swap.direction === 'sell' && !config.copySells)
+          ) {
+            ps.incr('directionSkipped')
+            continue
+          }
 
           const detectedTrade: DetectedTrade = {
             id: crypto.randomUUID(),
@@ -324,6 +353,7 @@ export async function startCopyTradeBot(config: CopyTradeBotConfig): Promise<voi
           }
 
           recordDetectedTrade(detectedTrade)
+          ps.incr('tradesDetected')
           updateInternal({ detected: tradesDetected + 1 })
 
           // Telegram notification — non-blocking
@@ -377,11 +407,14 @@ export async function startCopyTradeBot(config: CopyTradeBotConfig): Promise<voi
             const failed = results.filter((r) => r.status === 'failed').length
 
             updateDetectedTradeReplicated(detectedTrade.id, succeeded > 0)
+            if (succeeded > 0) ps.incrBy('tradesReplicated', succeeded)
+            if (failed > 0) ps.incrBy('tradesFailed', failed)
             updateInternal({
               replicated: tradesReplicated + succeeded,
               failed: tradesFailed + failed
             })
           } catch {
+            ps.incrBy('tradesFailed', tasks.length)
             updateInternal({ failed: tradesFailed + tasks.length })
           }
         }
