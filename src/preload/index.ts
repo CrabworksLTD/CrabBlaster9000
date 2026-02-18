@@ -14,16 +14,11 @@ const ALLOWED_INVOKE_CHANNELS: string[] = [
   'settings:get-rpc', 'settings:set-rpc', 'settings:test-rpc',
   'settings:get', 'settings:set',
   'settings:save-telegram-keys', 'settings:get-telegram-configured',
-  'settings:test-telegram', 'settings:clear-telegram-keys',
-  'pm:get-settings', 'pm:set-settings', 'pm:save-keys', 'pm:test-connection',
-  'pm:leaderboard', 'pm:tracked-wallets', 'pm:track-wallet', 'pm:untrack-wallet',
-  'pm:toggle-wallet', 'pm:wallet-trades', 'pm:copy-positions', 'pm:close-position',
-  'pm:copy-log', 'pm:stats', 'pm:start', 'pm:stop', 'pm:state'
+  'settings:test-telegram', 'settings:clear-telegram-keys'
 ]
 
 const ALLOWED_EVENT_CHANNELS: string[] = [
-  'bot:state-changed', 'bot:trade-detected', 'tx:event', 'wallet:balance-update',
-  'pm:trade-detected', 'pm:copy-executed', 'pm:position-updated', 'pm:state-changed'
+  'bot:state-changed', 'bot:trade-detected', 'tx:event', 'wallet:balance-update'
 ]
 
 const electronAPI = {

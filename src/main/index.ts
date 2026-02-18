@@ -7,7 +7,6 @@ import { registerWalletIpc } from './ipc/wallet.ipc'
 import { registerBotIpc } from './ipc/bot.ipc'
 import { registerTransactionIpc } from './ipc/transaction.ipc'
 import { registerSettingsIpc } from './ipc/settings.ipc'
-import { registerPolymarketIpc } from './ipc/polymarket.ipc'
 import { getTelegramNotifier } from './services/telegram-notifier'
 import { autoUpdater } from 'electron-updater'
 
@@ -92,7 +91,6 @@ app.whenReady().then(() => {
   registerBotIpc()
   registerTransactionIpc()
   registerSettingsIpc()
-  registerPolymarketIpc()
   createWindow()
 
   autoUpdater.checkForUpdatesAndNotify()

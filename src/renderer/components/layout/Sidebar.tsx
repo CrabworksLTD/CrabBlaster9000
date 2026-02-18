@@ -4,8 +4,7 @@ import {
   Wallet,
   Settings2,
   Bot,
-  Activity,
-  Copy
+  Activity
 } from 'lucide-react'
 
 const navItems = [
@@ -13,7 +12,6 @@ const navItems = [
   { to: '/wallets', icon: Wallet, label: 'Wallets' },
   { to: '/bot-config', icon: Settings2, label: 'Bot Config' },
   { to: '/bot-control', icon: Bot, label: 'Bot Control' },
-  { to: '/polymarket', icon: Copy, label: 'Polymarket' },
   { to: '/settings', icon: Activity, label: 'Settings' }
 ]
 
